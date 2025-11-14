@@ -46,9 +46,6 @@ class AutomaticReconstructionWidget : public OptionsWidget {
  private:
   void RenderResult();
 
-  // Feature detection & matching
-  QComboBox* feature_detector_cb_;
-  QComboBox* feature_matcher_cb_;
 
   MainWindow* main_window_;
   AutomaticReconstructionController::Options options_;
@@ -56,6 +53,7 @@ class AutomaticReconstructionWidget : public OptionsWidget {
   QComboBox* data_type_cb_;
   QComboBox* quality_cb_;
   QComboBox* mesher_cb_;
+  QComboBox* matching_approach_cb_; // Detection & Matching
   QAction* render_result_;
 };
 

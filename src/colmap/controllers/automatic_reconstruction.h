@@ -116,6 +116,15 @@ class AutomaticReconstructionController : public Thread {
     // comma, e.g., "0,1,2,3". For single-GPU stages only the first GPU will be
     // used. By default, all available GPUs will be used in all stages.
     std::string gpu_index = "-1";
+
+    // Matching approach selection
+    enum class MatchingApproach {
+    DEFAULT_SIFT = 0,
+    SUPERPOINT_SUPERGLUE = 1,
+    R2D2_SUPERGLUE = 2,
+    LOFTR = 3
+    };
+    MatchingApproach matching_approach = MatchingApproach::DEFAULT_SIFT;
   };
 
   AutomaticReconstructionController(

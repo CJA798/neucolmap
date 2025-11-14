@@ -83,6 +83,36 @@ AutomaticReconstructionController::AutomaticReconstructionController(
     option_manager_.ModifyForExtremeQuality();
   }
 
+
+  // Log selected matching approach (feature implementation to come later)
+  switch (options_.matching_approach) {
+    case Options::MatchingApproach::DEFAULT_SIFT:
+      LOG(INFO) << "Using Default SIFT pipeline";
+      // Using default SIFT (already configured)
+      break;
+      
+    case Options::MatchingApproach::SUPERPOINT_SUPERGLUE:
+      LOG(INFO) << "SuperPoint + SuperGlue selected (not yet implemented, using SIFT)";
+      // TODO: Implement SuperPoint + SuperGlue when available
+      break;
+      
+    case Options::MatchingApproach::R2D2_SUPERGLUE:
+      LOG(INFO) << "R2D2 + SuperGlue selected (not yet implemented, using SIFT)";
+      // TODO: Implement R2D2 + SuperGlue when available
+      break;
+      
+    case Options::MatchingApproach::LOFTR:
+      LOG(INFO) << "LoFTR selected (not yet implemented, using SIFT)";
+      // TODO: Implement LoFTR when available
+      break;
+}
+
+
+
+
+
+
+
   option_manager_.feature_extraction->num_threads = options_.num_threads;
   option_manager_.feature_matching->num_threads = options_.num_threads;
   option_manager_.sequential_pairing->num_threads = options_.num_threads;

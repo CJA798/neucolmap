@@ -102,47 +102,28 @@ AutomaticReconstructionWidget::AutomaticReconstructionWidget(
   AddOptionBool(&options_.use_gpu, "GPU");
   AddOptionText(&options_.gpu_index, "gpu_index");
 
-
-
   AddSpacer();
 
-  // Feature detector label and combo box
-  QLabel* feature_detector_label = new QLabel(tr("Feature detector"), this);
-  feature_detector_label->setFont(font());
-  feature_detector_label->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-  grid_layout_->addWidget(feature_detector_label, grid_layout_->rowCount(), 0);
+  // Detection & Matching
+  QLabel* matching_approach_label = new QLabel(tr("Matching approach"), this);
+  matching_approach_label->setFont(font());
+  matching_approach_label->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+  grid_layout_->addWidget(matching_approach_label, grid_layout_->rowCount(), 0);
 
-  feature_detector_cb_ = new QComboBox(this);
-  feature_detector_cb_->addItem("SIFT (default)");
-  feature_detector_cb_->addItem("SuperPoint");
-  grid_layout_->addWidget(feature_detector_cb_, grid_layout_->rowCount() - 1, 1);
-  connect(feature_detector_cb_, 
+  matching_approach_cb_ = new QComboBox(this);
+  matching_approach_cb_->addItem("Default (SIFT)");
+  matching_approach_cb_->addItem("SuperPoint + SuperGlue");
+  matching_approach_cb_->addItem("R2D2 + SuperGlue");
+  matching_approach_cb_->addItem("LoFTR");
+  grid_layout_->addWidget(matching_approach_cb_, grid_layout_->rowCount() - 1, 1);
+  connect(matching_approach_cb_,
           QOverload<int>::of(&QComboBox::currentIndexChanged),
           [this](int index) {
-            std::cout << "Feature Detector: " 
-                      << feature_detector_cb_->currentText().toStdString() 
+            std::cout << "Selected matching approach: " 
+                      << matching_approach_cb_->currentText().toStdString() 
                       << std::endl;
           });
 
-  // Feature matcher label and combo box
-  QLabel* feature_matcher_label = new QLabel(tr("Feature matcher"), this);
-  feature_matcher_label->setFont(font());
-  feature_matcher_label->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-  grid_layout_->addWidget(feature_matcher_label, grid_layout_->rowCount(), 0);
-
-  feature_matcher_cb_ = new QComboBox(this);
-  feature_matcher_cb_->addItem("Default");
-  feature_matcher_cb_->addItem("SuperGlue");
-  grid_layout_->addWidget(feature_matcher_cb_, grid_layout_->rowCount() - 1, 1);
-  connect(feature_matcher_cb_,
-          QOverload<int>::of(&QComboBox::currentIndexChanged),
-          [this](int index) {
-            std::cout << "Feature Matcher: " 
-                      << feature_matcher_cb_->currentText().toStdString() 
-                      << std::endl;
-          });
-
-  
 
 
   AddSpacer();
@@ -220,6 +201,30 @@ void AutomaticReconstructionWidget::Run() {
       break;
     default:
       options_.mesher = AutomaticReconstructionController::Mesher::POISSON;
+      break;
+  }
+
+  // Set matching approach
+  switch (matching_approach_cb_->currentIndex()) {
+    case 0:
+      options_.matching_approach = 
+          AutomaticReconstructionController::Options::MatchingApproach::DEFAULT_SIFT;
+      break;
+    case 1:
+      options_.matching_approach = 
+          AutomaticReconstructionController::Options::MatchingApproach::SUPERPOINT_SUPERGLUE;
+      break;
+    case 2:
+      options_.matching_approach = 
+          AutomaticReconstructionController::Options::MatchingApproach::R2D2_SUPERGLUE;
+      break;
+    case 3:
+      options_.matching_approach = 
+          AutomaticReconstructionController::Options::MatchingApproach::LOFTR;
+      break;
+    default:
+      options_.matching_approach = 
+          AutomaticReconstructionController::Options::MatchingApproach::DEFAULT_SIFT;
       break;
   }
 
