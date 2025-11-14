@@ -314,9 +314,9 @@ ModelViewerWidget::ModelViewerWidget(QWidget* parent, OptionManager* options)
       selected_point3D_id_(kInvalidPoint3DId),
       coordinate_grid_enabled_(true),
       near_plane_(kInitNearPlane) {
-  background_color_[0] = 1.0f;
-  background_color_[1] = 1.0f;
-  background_color_[2] = 1.0f;
+  background_color_[0] = 0.1f;  // Very dark gray
+  background_color_[1] = 0.1f;
+  background_color_[2] = 0.1f;
 
   QSurfaceFormat format;
   format.setDepthBufferSize(24);
