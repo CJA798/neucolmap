@@ -92,11 +92,10 @@ AutomaticReconstructionController::AutomaticReconstructionController(
       break;
       
     case Options::MatchingApproach::SUPERPOINT_SUPERGLUE:
-      LOG(WARNING) << "SuperPoint + SuperGlue selected but not yet implemented.";
-      LOG(WARNING) << "Falling back to SIFT for now.";
-      // Don't set the types - leave them as default SIFT
-      // option_manager_.feature_extraction->type = FeatureExtractorType::SUPERPOINT;
-      // option_manager_.feature_matching->type = FeatureMatcherType::SUPERGLUE;
+      LOG(INFO) << "Using SuperPoint feature extractor";
+      option_manager_.feature_extraction->type = FeatureExtractorType::SUPERPOINT;
+      LOG(WARNING) << "SuperGlue matcher not yet implemented, using SIFT matching";
+      // Leave matcher as SIFT for now
       break;
       
     case Options::MatchingApproach::R2D2_SUPERGLUE:

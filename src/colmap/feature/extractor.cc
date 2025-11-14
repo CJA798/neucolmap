@@ -32,6 +32,8 @@
 #include "colmap/feature/sift.h"
 #include "colmap/util/misc.h"
 
+#include "colmap/feature/superpoint.h"
+
 namespace colmap {
 namespace {
 
@@ -91,7 +93,7 @@ std::unique_ptr<FeatureExtractor> FeatureExtractor::Create(
     case FeatureExtractorType::SIFT:
       return CreateSiftFeatureExtractor(options);
     case FeatureExtractorType::SUPERPOINT:
-      throw std::runtime_error("SuperPoint feature extractor not yet implemented. Please use SIFT for now.");
+      return SuperPointFeatureExtractor::Create(options);  // ADD THIS
     case FeatureExtractorType::R2D2:
       throw std::runtime_error("R2D2 feature extractor not yet implemented. Please use SIFT for now.");
     case FeatureExtractorType::LOFTR:

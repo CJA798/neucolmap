@@ -55,6 +55,7 @@ COLMAP_ADD_LIBRARY(
         sift.h sift.cc
         types.h types.cc
         utils.h utils.cc
+        superpoint.h superpoint.cc
     PUBLIC_LINK_LIBS
         colmap_feature_types
         colmap_geometry
