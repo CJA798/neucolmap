@@ -46,6 +46,10 @@ class AutomaticReconstructionWidget : public OptionsWidget {
  private:
   void RenderResult();
 
+  // Feature detection & matching
+  QComboBox* feature_detector_cb_;
+  QComboBox* feature_matcher_cb_;
+
   MainWindow* main_window_;
   AutomaticReconstructionController::Options options_;
   ThreadControlWidget* thread_control_widget_;

@@ -102,6 +102,49 @@ AutomaticReconstructionWidget::AutomaticReconstructionWidget(
   AddOptionBool(&options_.use_gpu, "GPU");
   AddOptionText(&options_.gpu_index, "gpu_index");
 
+
+
+  AddSpacer();
+
+  // Feature detector label and combo box
+  QLabel* feature_detector_label = new QLabel(tr("Feature detector"), this);
+  feature_detector_label->setFont(font());
+  feature_detector_label->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+  grid_layout_->addWidget(feature_detector_label, grid_layout_->rowCount(), 0);
+
+  feature_detector_cb_ = new QComboBox(this);
+  feature_detector_cb_->addItem("SIFT (default)");
+  feature_detector_cb_->addItem("SuperPoint");
+  grid_layout_->addWidget(feature_detector_cb_, grid_layout_->rowCount() - 1, 1);
+  connect(feature_detector_cb_, 
+          QOverload<int>::of(&QComboBox::currentIndexChanged),
+          [this](int index) {
+            std::cout << "Feature Detector: " 
+                      << feature_detector_cb_->currentText().toStdString() 
+                      << std::endl;
+          });
+
+  // Feature matcher label and combo box
+  QLabel* feature_matcher_label = new QLabel(tr("Feature matcher"), this);
+  feature_matcher_label->setFont(font());
+  feature_matcher_label->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+  grid_layout_->addWidget(feature_matcher_label, grid_layout_->rowCount(), 0);
+
+  feature_matcher_cb_ = new QComboBox(this);
+  feature_matcher_cb_->addItem("Default");
+  feature_matcher_cb_->addItem("SuperGlue");
+  grid_layout_->addWidget(feature_matcher_cb_, grid_layout_->rowCount() - 1, 1);
+  connect(feature_matcher_cb_,
+          QOverload<int>::of(&QComboBox::currentIndexChanged),
+          [this](int index) {
+            std::cout << "Feature Matcher: " 
+                      << feature_matcher_cb_->currentText().toStdString() 
+                      << std::endl;
+          });
+
+  
+
+
   AddSpacer();
 
   QPushButton* run_button = new QPushButton(tr("Run"), this);
