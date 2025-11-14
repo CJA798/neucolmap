@@ -37,7 +37,7 @@
 
 namespace colmap {
 
-MAKE_ENUM_CLASS_OVERLOAD_STREAM(FeatureExtractorType, 0, SIFT);
+MAKE_ENUM_CLASS_OVERLOAD_STREAM(FeatureExtractorType, 0, SIFT, SUPERPOINT, R2D2, LOFTR);
 
 struct SiftExtractionOptions;
 

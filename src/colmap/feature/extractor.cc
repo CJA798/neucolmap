@@ -50,6 +50,10 @@ bool FeatureExtractionOptions::RequiresRGB() const {
   switch (type) {
     case FeatureExtractorType::SIFT:
       return false;
+    case FeatureExtractorType::SUPERPOINT:
+    case FeatureExtractorType::R2D2:
+    case FeatureExtractorType::LOFTR:
+      return true;  // Neural network methods typically need RGB
     default:
       ThrowUnknownFeatureExtractorType(type);
   }
@@ -62,17 +66,23 @@ bool FeatureExtractionOptions::Check() const {
     CHECK_OPTION_GT(CSVToVector<int>(gpu_index).size(), 0);
 #ifndef COLMAP_GPU_ENABLED
     LOG(ERROR) << "Cannot use GPU feature Extraction without CUDA or OpenGL "
-                  "support. Set use_gpu or use_gpu to false.";
+                  "support. Set use_gpu to false.";
     return false;
 #endif
   }
-  if (type == FeatureExtractorType::SIFT) {
-    return THROW_CHECK_NOTNULL(sift)->Check();
-  } else {
-    LOG(ERROR) << "Unknown feature extractor type: " << type;
-    return false;
+  
+  switch (type) {
+    case FeatureExtractorType::SIFT:
+      return THROW_CHECK_NOTNULL(sift)->Check();
+    case FeatureExtractorType::SUPERPOINT:
+    case FeatureExtractorType::R2D2:
+    case FeatureExtractorType::LOFTR:
+      LOG(WARNING) << "Using " << type << " (implementation not yet available, will throw error at runtime)";
+      return true;
+    default:
+      LOG(ERROR) << "Unknown feature extractor type: " << type;
+      return false;
   }
-  return true;
 }
 
 std::unique_ptr<FeatureExtractor> FeatureExtractor::Create(
@@ -80,6 +90,12 @@ std::unique_ptr<FeatureExtractor> FeatureExtractor::Create(
   switch (options.type) {
     case FeatureExtractorType::SIFT:
       return CreateSiftFeatureExtractor(options);
+    case FeatureExtractorType::SUPERPOINT:
+      throw std::runtime_error("SuperPoint feature extractor not yet implemented. Please use SIFT for now.");
+    case FeatureExtractorType::R2D2:
+      throw std::runtime_error("R2D2 feature extractor not yet implemented. Please use SIFT for now.");
+    case FeatureExtractorType::LOFTR:
+      throw std::runtime_error("LoFTR feature extractor not yet implemented. Please use SIFT for now.");
     default:
       ThrowUnknownFeatureExtractorType(options.type);
   }

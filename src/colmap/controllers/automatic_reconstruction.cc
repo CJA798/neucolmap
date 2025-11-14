@@ -92,18 +92,21 @@ AutomaticReconstructionController::AutomaticReconstructionController(
       break;
       
     case Options::MatchingApproach::SUPERPOINT_SUPERGLUE:
-      LOG(INFO) << "SuperPoint + SuperGlue selected (not yet implemented, using SIFT)";
-      // TODO: Implement SuperPoint + SuperGlue when available
+      LOG(WARNING) << "SuperPoint + SuperGlue selected but not yet implemented.";
+      LOG(WARNING) << "Falling back to SIFT for now.";
+      // Don't set the types - leave them as default SIFT
+      // option_manager_.feature_extraction->type = FeatureExtractorType::SUPERPOINT;
+      // option_manager_.feature_matching->type = FeatureMatcherType::SUPERGLUE;
       break;
       
     case Options::MatchingApproach::R2D2_SUPERGLUE:
-      LOG(INFO) << "R2D2 + SuperGlue selected (not yet implemented, using SIFT)";
-      // TODO: Implement R2D2 + SuperGlue when available
+      LOG(WARNING) << "R2D2 + SuperGlue selected but not yet implemented.";
+      LOG(WARNING) << "Falling back to SIFT for now.";
       break;
       
     case Options::MatchingApproach::LOFTR:
-      LOG(INFO) << "LoFTR selected (not yet implemented, using SIFT)";
-      // TODO: Implement LoFTR when available
+      LOG(WARNING) << "LoFTR selected but not yet implemented.";
+      LOG(WARNING) << "Falling back to SIFT for now.";
       break;
 }
 

@@ -42,18 +42,23 @@ bool FeatureMatchingOptions::Check() const {
     CHECK_OPTION_GT(CSVToVector<int>(gpu_index).size(), 0);
 #ifndef COLMAP_GPU_ENABLED
     LOG(ERROR) << "Cannot use GPU feature matching without CUDA or OpenGL "
-                  "support. Set use_gpu or use_gpu to false.";
+                  "support. Set use_gpu to false.";
     return false;
 #endif
   }
   CHECK_OPTION_GE(max_num_matches, 0);
-  if (type == FeatureMatcherType::SIFT) {
-    return THROW_CHECK_NOTNULL(sift)->Check();
-  } else {
-    LOG(ERROR) << "Unknown feature matcher type: " << type;
-    return false;
+  
+  switch (type) {
+    case FeatureMatcherType::SIFT:
+      return THROW_CHECK_NOTNULL(sift)->Check();
+    case FeatureMatcherType::SUPERGLUE:
+    case FeatureMatcherType::LOFTR:
+      LOG(WARNING) << "Using " << type << " (implementation not yet available, will throw error at runtime)";
+      return true;
+    default:
+      LOG(ERROR) << "Unknown feature matcher type: " << type;
+      return false;
   }
-  return true;
 }
 
 std::unique_ptr<FeatureMatcher> FeatureMatcher::Create(
@@ -61,6 +66,10 @@ std::unique_ptr<FeatureMatcher> FeatureMatcher::Create(
   switch (options.type) {
     case FeatureMatcherType::SIFT:
       return CreateSiftFeatureMatcher(options);
+    case FeatureMatcherType::SUPERGLUE:
+      throw std::runtime_error("SuperGlue feature matcher not yet implemented. Please use SIFT for now.");
+    case FeatureMatcherType::LOFTR:
+      throw std::runtime_error("LoFTR feature matcher not yet implemented. Please use SIFT for now.");
     default:
       std::ostringstream error;
       error << "Unknown feature matcher type: " << options.type;
