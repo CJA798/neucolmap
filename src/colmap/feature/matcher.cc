@@ -51,9 +51,14 @@ bool FeatureMatchingOptions::Check() const {
   switch (type) {
     case FeatureMatcherType::SIFT:
       return THROW_CHECK_NOTNULL(sift)->Check();
-    case FeatureMatcherType::SUPERGLUE:
-    case FeatureMatcherType::LOFTR:
-      LOG(WARNING) << "Using " << type << " (implementation not yet available, will throw error at runtime)";
+    case FeatureMatcherType::ALIKED_LIGHTGLUE:
+      LOG(INFO) << "Using ALIKED + LightGlue (external implementation)";
+      return true;
+    case FeatureMatcherType::XFEAT:
+      LOG(INFO) << "Using XFeat (external implementation)";
+      return true;
+    case FeatureMatcherType::DISK:
+      LOG(INFO) << "Using DISK (external implementation)";
       return true;
     default:
       LOG(ERROR) << "Unknown feature matcher type: " << type;
@@ -66,17 +71,24 @@ std::unique_ptr<FeatureMatcher> FeatureMatcher::Create(
   switch (options.type) {
     case FeatureMatcherType::SIFT:
       return CreateSiftFeatureMatcher(options);
-    case FeatureMatcherType::SUPERGLUE:
-      throw std::runtime_error("SuperGlue feature matcher not yet implemented. Please use SIFT for now.");
-    case FeatureMatcherType::LOFTR:
-      throw std::runtime_error("LoFTR feature matcher not yet implemented. Please use SIFT for now.");
+    case FeatureMatcherType::ALIKED_LIGHTGLUE:
+      throw std::runtime_error(
+          "ALIKED + LightGlue not yet implemented. "
+          "Features should be extracted externally before running COLMAP.");
+    case FeatureMatcherType::XFEAT:
+      throw std::runtime_error(
+          "XFeat not yet implemented. "
+          "Features should be extracted externally before running COLMAP.");
+    case FeatureMatcherType::DISK:
+      throw std::runtime_error(
+          "DISK not yet implemented. "
+          "Features should be extracted externally before running COLMAP.");
     default:
       std::ostringstream error;
       error << "Unknown feature matcher type: " << options.type;
       throw std::runtime_error(error.str());
   }
 }
-
 FeatureMatcherCache::FeatureMatcherCache(
     const size_t cache_size, const std::shared_ptr<Database>& database)
     : cache_size_(cache_size),

@@ -103,3 +103,6 @@ COLMAP_ADD_TEST(
 if(TESTS_ENABLED AND GUI_ENABLED)
     target_link_libraries(colmap_feature_sift_test Qt${QT_VERSION_MAJOR}::Widgets)
 endif()
+
+# ONNX-based feature extractors
+add_subdirectory(onnx)

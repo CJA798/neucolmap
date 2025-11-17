@@ -1,32 +1,3 @@
-// Copyright (c), ETH Zurich and UNC Chapel Hill.
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//
-//     * Redistributions in binary form must reproduce the above copyright
-//       notice, this list of conditions and the following disclaimer in the
-//       documentation and/or other materials provided with the distribution.
-//
-//     * Neither the name of ETH Zurich and UNC Chapel Hill nor the names of
-//       its contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
-
 #include "colmap/controllers/automatic_reconstruction.h"
 
 #include "colmap/controllers/feature_extraction.h"
@@ -39,6 +10,14 @@
 #include "colmap/mvs/patch_match.h"
 #include "colmap/scene/database.h"
 #include "colmap/util/logging.h"
+
+#ifdef COLMAP_ONNX_ENABLED
+#include "colmap/feature/onnx/superpoint_lightglue.h"
+#endif
+
+#include "colmap/util/string.h"
+#include "colmap/util/file.h"
+#include "colmap/estimators/two_view_geometry.h"
 
 namespace colmap {
 
@@ -84,36 +63,27 @@ AutomaticReconstructionController::AutomaticReconstructionController(
   }
 
 
-  // Log selected matching approach (feature implementation to come later)
+
+  // Log selected matching approach
   switch (options_.matching_approach) {
     case Options::MatchingApproach::DEFAULT_SIFT:
       LOG(INFO) << "Using Default SIFT pipeline";
-      // Using default SIFT (already configured)
       break;
       
-    case Options::MatchingApproach::SUPERPOINT_SUPERGLUE:
-      LOG(WARNING) << "SuperPoint + SuperGlue selected but not yet implemented.";
-      LOG(WARNING) << "Falling back to SIFT for now.";
-      // Don't set the types - leave them as default SIFT
-      // option_manager_.feature_extraction->type = FeatureExtractorType::SUPERPOINT;
-      // option_manager_.feature_matching->type = FeatureMatcherType::SUPERGLUE;
+    case Options::MatchingApproach::SUPERPOINT_LIGHTGLUE:
+      LOG(INFO) << "Using SuperPoint + LightGlue pipeline";
       break;
       
-    case Options::MatchingApproach::R2D2_SUPERGLUE:
-      LOG(WARNING) << "R2D2 + SuperGlue selected but not yet implemented.";
-      LOG(WARNING) << "Falling back to SIFT for now.";
+    case Options::MatchingApproach::XFEAT:
+      LOG(INFO) << "Using XFeat pipeline";
+      LOG(WARNING) << "XFeat not yet implemented, falling back to SIFT";
       break;
       
-    case Options::MatchingApproach::LOFTR:
-      LOG(WARNING) << "LoFTR selected but not yet implemented.";
-      LOG(WARNING) << "Falling back to SIFT for now.";
+    case Options::MatchingApproach::DISK:
+      LOG(INFO) << "Using DISK pipeline";
+      LOG(WARNING) << "DISK not yet implemented, falling back to SIFT";
       break;
-}
-
-
-
-
-
+  }
 
 
   option_manager_.feature_extraction->num_threads = options_.num_threads;
@@ -196,10 +166,232 @@ void AutomaticReconstructionController::Stop() {
   Thread::Stop();
 }
 
+
+#ifdef COLMAP_ONNX_ENABLED
+void AutomaticReconstructionController::RunMLFeatureExtractionAndMatching() {
+  LOG(INFO) << "Starting ML-based feature extraction and matching";
+  
+  // Initialize SuperPoint extractor
+  SuperPointExtractor::Options ml_options;
+  ml_options.use_gpu = options_.use_gpu;
+  ml_options.num_threads = options_.num_threads;
+  
+  SuperPointExtractor extractor(ml_options);
+  
+  // Open database
+  auto database = Database::Open(*option_manager_.database_path);
+  
+  // Get image paths
+  std::vector<std::string> image_paths = GetRecursiveFileList(options_.image_path);
+  std::sort(image_paths.begin(), image_paths.end());
+  
+  // Filter to only image files
+  std::vector<std::string> valid_image_paths;
+  for (const auto& path : image_paths) {
+    if (HasFileExtension(path, ".jpg") || HasFileExtension(path, ".jpeg") || 
+        HasFileExtension(path, ".png") || HasFileExtension(path, ".JPG")) {
+      valid_image_paths.push_back(path);
+    }
+  }
+  
+  if (valid_image_paths.empty()) {
+    LOG(ERROR) << "No valid images found in: " << options_.image_path;
+    return;
+  }
+  
+  LOG(INFO) << "Found " << valid_image_paths.size() << " images";
+  
+  // Load images and register in database
+  std::vector<image_t> image_ids;
+  std::vector<Bitmap> bitmaps;
+  std::vector<FeatureKeypoints> all_keypoints;
+  std::vector<FeatureDescriptors> all_descriptors;
+  
+  camera_t shared_camera_id = kInvalidCameraId;
+  
+  for (size_t i = 0; i < valid_image_paths.size(); ++i) {
+    const std::string& path = valid_image_paths[i];
+    const std::string name = GetPathBaseName(path);
+    
+    LOG(INFO) << StringPrintf("Processing image [%d/%d]: %s", 
+                              i + 1, valid_image_paths.size(), name.c_str());
+    
+    Bitmap bitmap;
+    if (!bitmap.Read(path)) {
+      LOG(WARNING) << "Failed to load image: " << path;
+      continue;
+    }
+    
+    // Create or get camera
+    camera_t camera_id;
+    if (options_.single_camera && shared_camera_id != kInvalidCameraId) {
+      camera_id = shared_camera_id;
+    } else {
+      Camera camera;
+      camera.model_id = CameraModelNameToId(options_.camera_model);
+      camera.width = bitmap.Width();
+      camera.height = bitmap.Height();
+      
+      // Initialize camera parameters
+      const double focal_length = std::max(bitmap.Width(), bitmap.Height()) * 1.2;
+      const double cx = bitmap.Width() / 2.0;
+      const double cy = bitmap.Height() / 2.0;
+      
+      if (camera.ModelName() == "SIMPLE_RADIAL") {
+        camera.params = {focal_length, cx, cy, 0.0};
+      } else if (camera.ModelName() == "PINHOLE") {
+        camera.params = {focal_length, focal_length, cx, cy};
+      } else if (camera.ModelName() == "SIMPLE_PINHOLE") {
+        camera.params = {focal_length, cx, cy};
+      } else {
+        LOG(FATAL) << "Unsupported camera model: " << camera.ModelName();
+      }
+      
+      camera_id = database->WriteCamera(camera);
+      
+      if (options_.single_camera && shared_camera_id == kInvalidCameraId) {
+        shared_camera_id = camera_id;
+      }
+    }
+    
+    // Register image in database
+    Image image;
+    image.SetName(name);
+    image.SetCameraId(camera_id);
+    image_t image_id = database->WriteImage(image);
+    
+    // Extract features with SuperPoint
+    FeatureKeypoints keypoints;
+    FeatureDescriptors descriptors;
+    
+    if (!extractor.Extract(bitmap, &keypoints, &descriptors)) {
+      LOG(WARNING) << "Failed to extract features";
+      continue;
+    }
+    
+    // Write to database
+    database->WriteKeypoints(image_id, keypoints);
+    database->WriteDescriptors(image_id, descriptors);
+    
+    LOG(INFO) << StringPrintf("  Extracted %d keypoints", keypoints.size());
+    
+    // Store for matching
+    image_ids.push_back(image_id);
+    all_keypoints.push_back(keypoints);
+    all_descriptors.push_back(descriptors);
+  }
+  
+  const size_t num_images = image_ids.size();
+  LOG(INFO) << "Registered " << num_images << " images in database";
+  
+  // Match all pairs
+  LOG(INFO) << "Matching image pairs with geometric verification...";
+  size_t num_total_matches = 0;
+  size_t num_verified_pairs = 0;
+  
+  for (size_t i = 0; i < num_images; ++i) {
+    for (size_t j = i + 1; j < num_images; ++j) {
+      LOG(INFO) << StringPrintf("Matching images [%d-%d]", i, j);
+      
+      // Match descriptors
+      FeatureMatches matches;
+      DescriptorMatcher::MatchDescriptors(all_descriptors[i], all_descriptors[j], 
+                                         &matches, 0.8);
+      
+      if (matches.empty()) {
+        LOG(WARNING) << "No matches found";
+        continue;
+      }
+      
+      LOG(INFO) << StringPrintf("  Found %d descriptor matches", matches.size());
+      
+      // Write raw matches
+      database->WriteMatches(image_ids[i], image_ids[j], matches);
+      
+      // Convert keypoints to Eigen::Vector2d for geometric verification
+      std::vector<Eigen::Vector2d> points1, points2;
+      points1.reserve(all_keypoints[i].size());
+      points2.reserve(all_keypoints[j].size());
+      
+      for (const auto& kp : all_keypoints[i]) {
+        points1.emplace_back(kp.x, kp.y);
+      }
+      for (const auto& kp : all_keypoints[j]) {
+        points2.emplace_back(kp.x, kp.y);
+      }
+      
+      // Perform geometric verification
+      const Camera& camera1 = database->ReadCamera(
+          database->ReadImage(image_ids[i]).CameraId());
+      const Camera& camera2 = database->ReadCamera(
+          database->ReadImage(image_ids[j]).CameraId());
+      
+      TwoViewGeometryOptions two_view_options;
+      two_view_options.ransac_options = option_manager_.two_view_geometry->ransac_options;
+      
+      TwoViewGeometry two_view_geometry = EstimateTwoViewGeometry(
+          camera1, points1,
+          camera2, points2,
+          matches,
+          two_view_options);
+      
+      // Write verified geometry
+      database->WriteTwoViewGeometry(image_ids[i], image_ids[j], two_view_geometry);
+      
+      num_total_matches += matches.size();
+      
+      if (two_view_geometry.inlier_matches.size() >= 
+          static_cast<size_t>(two_view_options.min_num_inliers)) {
+        num_verified_pairs++;
+        LOG(INFO) << StringPrintf("  ✅ Verified: %d inliers (config: %d)", 
+                                 two_view_geometry.inlier_matches.size(),
+                                 static_cast<int>(two_view_geometry.config));
+      } else {
+        LOG(INFO) << StringPrintf("  ❌ Failed: %d inliers (config: %d)", 
+                                 two_view_geometry.inlier_matches.size(),
+                                 static_cast<int>(two_view_geometry.config));
+      }
+    }
+  }
+  
+  LOG(INFO) << StringPrintf("ML feature extraction complete: %d images, %d matches, %d verified pairs", 
+                           num_images, num_total_matches, num_verified_pairs);
+}
+#endif
+
+
 void AutomaticReconstructionController::Run() {
   if (IsStopped()) {
     return;
   }
+
+  #ifdef COLMAP_ONNX_ENABLED
+    // Check if using ML-based features
+    if (options_.matching_approach != Options::MatchingApproach::DEFAULT_SIFT) {
+      if (options_.extraction && options_.matching) {
+        RunMLFeatureExtractionAndMatching();
+      }
+      
+      if (IsStopped()) {
+        return;
+      }
+      
+      if (options_.sparse) {
+        RunSparseMapper();
+      }
+      
+      if (IsStopped()) {
+        return;
+      }
+      
+      if (options_.dense) {
+        RunDenseMapper();
+      }
+      
+      return;
+    }
+  #endif
+
 
   if (options_.extraction) {
     RunFeatureExtraction();

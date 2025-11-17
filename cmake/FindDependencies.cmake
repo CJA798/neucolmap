@@ -128,6 +128,39 @@ if(NOT FETCH_FAISS)
     find_package(faiss ${COLMAP_FIND_TYPE})
 endif()
 
+
+
+# ONNX Runtime for ML feature extractors
+if(DEFINED ENV{ONNXRUNTIME_ROOT})
+    set(ONNXRUNTIME_ROOT $ENV{ONNXRUNTIME_ROOT})
+    set(ONNXRUNTIME_INCLUDE_DIRS ${ONNXRUNTIME_ROOT}/include)
+    set(ONNXRUNTIME_LIBRARIES ${ONNXRUNTIME_ROOT}/lib/libonnxruntime.so)
+    
+    if(EXISTS ${ONNXRUNTIME_INCLUDE_DIRS} AND EXISTS ${ONNXRUNTIME_LIBRARIES})
+        set(ONNXRUNTIME_FOUND TRUE)
+        list(APPEND COLMAP_COMPILE_DEFINITIONS COLMAP_ONNX_ENABLED)
+        
+        # Create imported target
+        add_library(ONNXRuntime::ONNXRuntime SHARED IMPORTED)
+        set_target_properties(ONNXRuntime::ONNXRuntime PROPERTIES
+            IMPORTED_LOCATION ${ONNXRUNTIME_LIBRARIES}
+            INTERFACE_INCLUDE_DIRECTORIES ${ONNXRUNTIME_INCLUDE_DIRS}
+        )
+        
+        message(STATUS "Found ONNX Runtime")
+        message(STATUS "  Include: ${ONNXRUNTIME_INCLUDE_DIRS}")
+        message(STATUS "  Library: ${ONNXRUNTIME_LIBRARIES}")
+    else()
+        set(ONNXRUNTIME_FOUND FALSE)
+        message(STATUS "ONNX Runtime paths not found - ML features disabled")
+    endif()
+else()
+    set(ONNXRUNTIME_FOUND FALSE)
+    message(STATUS "ONNX Runtime not configured - ML features disabled")
+endif()
+
+
+
 set(COLMAP_LINK_DIRS ${Boost_LIBRARY_DIRS})
 
 set(CUDA_MIN_VERSION "7.0")

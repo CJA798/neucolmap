@@ -119,12 +119,13 @@ class AutomaticReconstructionController : public Thread {
 
     // Matching approach selection
     enum class MatchingApproach {
-    DEFAULT_SIFT = 0,
-    SUPERPOINT_SUPERGLUE = 1,
-    R2D2_SUPERGLUE = 2,
-    LOFTR = 3
+      DEFAULT_SIFT = 0,
+      SUPERPOINT_LIGHTGLUE = 1,
+      XFEAT = 2,
+      DISK = 3
     };
-    MatchingApproach matching_approach = MatchingApproach::DEFAULT_SIFT;
+    MatchingApproach matching_approach = MatchingApproach::DEFAULT_SIFT;  
+  
   };
 
   AutomaticReconstructionController(
@@ -139,6 +140,10 @@ class AutomaticReconstructionController : public Thread {
   void RunFeatureMatching();
   void RunSparseMapper();
   void RunDenseMapper();
+
+  #ifdef COLMAP_ONNX_ENABLED
+    void RunMLFeatureExtractionAndMatching();
+  #endif
 
   const Options options_;
   OptionManager option_manager_;

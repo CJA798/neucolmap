@@ -1,0 +1,81 @@
+// Copyright (c) 2024, COLMAP contributors.
+// All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+//
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
+//
+//     * Redistributions in binary form must reproduce the above copyright
+//       notice, this list of conditions and the following disclaimer in the
+//       documentation and/or other materials provided with the distribution.
+//
+//     * Neither the name of the copyright holder nor the names of its
+//       contributors may be used to endorse or promote products derived from
+//       this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+
+#pragma once
+
+#ifdef COLMAP_ONNX_ENABLED
+
+#include "colmap/feature/extractor.h"
+#include "colmap/feature/matcher.h"
+#include "colmap/sensor/bitmap.h"
+
+#include <onnxruntime_cxx_api.h>
+#include <memory>
+#include <string>
+
+namespace colmap {
+
+// SuperPoint + LightGlue feature extractor and matcher using ONNX Runtime
+class SuperPointLightGlue {
+ public:
+  struct Options {
+    // Path to SuperPoint extractor model
+    std::string model_path = "/usr/local/share/colmap/models/superpoint_only.onnx";
+    
+    // We'll process images individually (no resizing needed!)
+    int max_num_keypoints = 1024;
+    int num_threads = 4;
+    bool use_gpu = true;
+    int gpu_index = 0;
+  };
+  };
+
+  explicit SuperPointLightGlue(const Options& options);
+  ~SuperPointLightGlue();
+
+  // Extract features from two images and match them
+  bool ExtractAndMatch(const Bitmap& bitmap1,
+                       const Bitmap& bitmap2,
+                       FeatureKeypoints* keypoints1,
+                       FeatureKeypoints* keypoints2,
+                       FeatureMatches* matches);
+
+ private:
+  Options options_;
+  std::unique_ptr<Ort::Env> env_;
+  std::unique_ptr<Ort::Session> session_;
+  std::unique_ptr<Ort::SessionOptions> session_options_;
+  
+  // Preprocess image for ONNX model (returns dimensions via out params)
+  std::vector<float> PreprocessImage(const Bitmap& bitmap, int& out_height, int& out_width);
+};
+
+}  // namespace colmap
+
+#endif  // COLMAP_ONNX_ENABLED
