@@ -112,9 +112,9 @@ AutomaticReconstructionWidget::AutomaticReconstructionWidget(
 
   matching_approach_cb_ = new QComboBox(this);
   matching_approach_cb_->addItem("Default (SIFT)");
-  matching_approach_cb_->addItem("SuperPoint + SuperGlue");
-  matching_approach_cb_->addItem("R2D2 + SuperGlue");
-  matching_approach_cb_->addItem("LoFTR");
+  matching_approach_cb_->addItem("SuperPoint + LightGlue");
+  matching_approach_cb_->addItem("XFeat");
+  matching_approach_cb_->addItem("DISK");
   grid_layout_->addWidget(matching_approach_cb_, grid_layout_->rowCount() - 1, 1);
   connect(matching_approach_cb_,
           QOverload<int>::of(&QComboBox::currentIndexChanged),
@@ -212,15 +212,15 @@ void AutomaticReconstructionWidget::Run() {
       break;
     case 1:
       options_.matching_approach = 
-          AutomaticReconstructionController::Options::MatchingApproach::SUPERPOINT_SUPERGLUE;
+          AutomaticReconstructionController::Options::MatchingApproach::SUPERPOINT_LIGHTGLUE;
       break;
     case 2:
       options_.matching_approach = 
-          AutomaticReconstructionController::Options::MatchingApproach::R2D2_SUPERGLUE;
+          AutomaticReconstructionController::Options::MatchingApproach::XFEAT;
       break;
     case 3:
       options_.matching_approach = 
-          AutomaticReconstructionController::Options::MatchingApproach::LOFTR;
+          AutomaticReconstructionController::Options::MatchingApproach::DISK;
       break;
     default:
       options_.matching_approach = 
@@ -228,6 +228,7 @@ void AutomaticReconstructionWidget::Run() {
       break;
   }
 
+  
   main_window_->reconstruction_manager_->Clear();
   main_window_->reconstruction_manager_widget_->Update();
   main_window_->RenderClear();

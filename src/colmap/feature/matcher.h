@@ -46,7 +46,14 @@
 
 namespace colmap {
 
-MAKE_ENUM_CLASS_OVERLOAD_STREAM(FeatureMatcherType, 0, SIFT, SUPERGLUE, LOFTR);
+
+MAKE_ENUM_CLASS_OVERLOAD_STREAM(FeatureMatcherType, 0, SIFT, ALIKED_LIGHTGLUE, XFEAT, DISK);
+
+// Note: This enum defines the matcher types that can be used for feature matching.
+// - SIFT: Traditional SIFT matching (baseline)
+// - ALIKED_LIGHTGLUE: ALIKED keypoints + LightGlue matcher (best for indoor)
+// - XFEAT: XFeat end-to-end matcher (fastest)
+// - DISK: DISK keypoints (maximum accuracy for SfM)
 
 struct SiftMatchingOptions;
 

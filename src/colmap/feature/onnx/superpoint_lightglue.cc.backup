@@ -1,0 +1,286 @@
+// Copyright (c) 2024, COLMAP contributors.
+// All rights reserved.
+
+#include "colmap/feature/onnx/superpoint_lightglue.h"
+
+#ifdef COLMAP_ONNX_ENABLED
+
+#include "colmap/util/logging.h"
+#include "colmap/util/misc.h"
+#include "colmap/util/file.h"
+
+#include <opencv2/opencv.hpp>
+
+namespace colmap {
+
+SuperPointLightGlue::SuperPointLightGlue(const Options& options)
+    : options_(options) {
+  // Initialize ONNX Runtime environment
+  env_ = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "SuperPointLightGlue");
+  
+  // Configure session options
+  session_options_ = std::make_unique<Ort::SessionOptions>();
+  session_options_->SetIntraOpNumThreads(options_.num_threads);
+  session_options_->SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+  
+  // Enable GPU if requested
+  if (options_.use_gpu) {
+    try {
+      OrtCUDAProviderOptions cuda_options;
+      cuda_options.device_id = options_.gpu_index;
+      session_options_->AppendExecutionProvider_CUDA(cuda_options);
+      LOG(INFO) << "SuperPointLightGlue: Using GPU device " << options_.gpu_index;
+    } catch (const Ort::Exception& e) {
+      LOG(WARNING) << "Failed to enable CUDA: " << e.what();
+      LOG(WARNING) << "Falling back to CPU";
+    }
+  }
+  
+  // Load the model
+  THROW_CHECK(ExistsFile(options_.model_path))
+      << "Model file not found: " << options_.model_path;
+  
+  try {
+    session_ = std::make_unique<Ort::Session>(*env_, options_.model_path.c_str(), *session_options_);
+    LOG(INFO) << "SuperPointLightGlue: Model loaded from " << options_.model_path;
+  } catch (const Ort::Exception& e) {
+    LOG(FATAL) << "Failed to load ONNX model: " << e.what();
+  }
+}
+
+SuperPointLightGlue::~SuperPointLightGlue() = default;
+
+std::vector<float> SuperPointLightGlue::PreprocessImage(const Bitmap& bitmap, int& out_height, int& out_width) {
+  // Convert to OpenCV Mat
+  cv::Mat img(bitmap.Height(), bitmap.Width(), CV_8UC3);
+  for (int y = 0; y < bitmap.Height(); ++y) {
+    for (int x = 0; x < bitmap.Width(); ++x) {
+      BitmapColor<uint8_t> color;
+      THROW_CHECK(bitmap.GetPixel(x, y, &color));
+      img.at<cv::Vec3b>(y, x) = cv::Vec3b(color.b, color.g, color.r);
+    }
+  }
+  
+  // Convert to grayscale
+  cv::Mat gray;
+  cv::cvtColor(img, gray, cv::COLOR_BGR2GRAY);
+  
+  // Resize to 512x512 (model works best at this size)
+  cv::Mat resized;
+  cv::resize(gray, resized, cv::Size(options_.image_size, options_.image_size));
+  
+  out_height = options_.image_size;
+  out_width = options_.image_size;
+  
+  // Normalize to [0, 1]
+  cv::Mat normalized;
+  resized.convertTo(normalized, CV_32F, 1.0 / 255.0);
+  
+  // Convert to vector in row-major order
+  std::vector<float> input_data(out_height * out_width);
+  for (int y = 0; y < out_height; ++y) {
+    for (int x = 0; x < out_width; ++x) {
+      input_data[y * out_width + x] = normalized.at<float>(y, x);
+    }
+  }
+  
+  return input_data;
+}
+
+bool SuperPointLightGlue::ExtractAndMatch(
+    const Bitmap& bitmap1,
+    const Bitmap& bitmap2,
+    FeatureKeypoints* keypoints1,
+    FeatureKeypoints* keypoints2,
+    FeatureMatches* matches) {
+  
+  THROW_CHECK_NOTNULL(keypoints1);
+  THROW_CHECK_NOTNULL(keypoints2);
+  THROW_CHECK_NOTNULL(matches);
+  
+  // Store original dimensions for scaling keypoints back
+  const int orig_width1 = bitmap1.Width();
+  const int orig_height1 = bitmap1.Height();
+  const int orig_width2 = bitmap2.Width();
+  const int orig_height2 = bitmap2.Height();
+  
+  try {
+    // Preprocess both images (resizes to 512x512)
+    int height1, width1, height2, width2;
+    auto image1_data = PreprocessImage(bitmap1, height1, width1);
+    auto image2_data = PreprocessImage(bitmap2, height2, width2);
+    
+    LOG(INFO) << StringPrintf("  Preprocessed: orig[%dx%d] -> model[%dx%d]",
+                             orig_width1, orig_height1, width1, height1);
+    
+    // Images must be same size for batching
+    if (height1 != height2 || width1 != width2) {
+      LOG(ERROR) << StringPrintf("Image size mismatch: [%dx%d] vs [%dx%d]",
+                                width1, height1, width2, height2);
+      return false;
+    }
+    
+    const int batch_size = 2;
+    const int channels = 1;
+    const int height = height1;
+    const int width = width1;
+    
+    // Combine images into batch tensor
+    std::vector<float> input_tensor_data;
+    input_tensor_data.reserve(batch_size * channels * height * width);
+    input_tensor_data.insert(input_tensor_data.end(), image1_data.begin(), image1_data.end());
+    input_tensor_data.insert(input_tensor_data.end(), image2_data.begin(), image2_data.end());
+    
+    // Create input tensor
+    std::vector<int64_t> input_shape = {batch_size, channels, height, width};
+    Ort::MemoryInfo memory_info = Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeCPU);
+    Ort::Value input_tensor = Ort::Value::CreateTensor<float>(
+        memory_info,
+        input_tensor_data.data(),
+        input_tensor_data.size(),
+        input_shape.data(),
+        input_shape.size());
+    
+    // Get input/output names
+    Ort::AllocatorWithDefaultOptions allocator;
+    auto input_name = session_->GetInputNameAllocated(0, allocator);
+    std::vector<const char*> input_names = {input_name.get()};
+    std::vector<const char*> output_names = {"keypoints", "matches", "mscores"};
+    
+    // DEBUG: Check if input tensor actually has image data!
+    LOG(INFO) << StringPrintf("  Input tensor size: %d elements", input_tensor_data.size());
+    LOG(INFO) << "  First 10 input values:";
+    std::ostringstream oss;
+    for (int i = 0; i < std::min(10, (int)input_tensor_data.size()); ++i) {
+      oss << input_tensor_data[i] << " ";
+    }
+    LOG(INFO) << "    " << oss.str();
+    
+    float min_val = *std::min_element(input_tensor_data.begin(), input_tensor_data.end());
+    float max_val = *std::max_element(input_tensor_data.begin(), input_tensor_data.end());
+    LOG(INFO) << StringPrintf("  Input tensor range: [%.4f - %.4f]", min_val, max_val);
+    
+    // Run inference
+    LOG(INFO) << "  Running ONNX inference...";
+    auto output_tensors = session_->Run(
+        Ort::RunOptions{nullptr},
+        input_names.data(),
+        &input_tensor,
+        1,
+        output_names.data(),
+        3);
+    
+    // DEBUG: Log tensor shapes
+    auto kp_shape = output_tensors[0].GetTensorTypeAndShapeInfo().GetShape();
+    auto match_shape = output_tensors[1].GetTensorTypeAndShapeInfo().GetShape();
+    auto score_shape = output_tensors[2].GetTensorTypeAndShapeInfo().GetShape();
+    
+    LOG(INFO) << StringPrintf("  ONNX output shapes:");
+    LOG(INFO) << StringPrintf("    Keypoints: [%lld, %lld, %lld]", 
+                             kp_shape[0], kp_shape[1], kp_shape[2]);
+    LOG(INFO) << StringPrintf("    Matches: [%lld, %lld]", 
+                             match_shape[0], match_shape[1]);
+    LOG(INFO) << StringPrintf("    Scores: [%lld]", score_shape[0]);
+    
+    // Extract keypoints
+    float* keypoints_data = output_tensors[0].GetTensorMutableData<float>();
+    auto keypoints_shape = output_tensors[0].GetTensorTypeAndShapeInfo().GetShape();
+    
+    const int num_keypoints = keypoints_shape[1];
+    
+    // DEBUG: Log raw keypoint values from model
+    LOG(INFO) << "  Raw keypoints from ONNX (first 5 per image):";
+    LOG(INFO) << StringPrintf("    Img1: [%.2f,%.2f] [%.2f,%.2f] [%.2f,%.2f] [%.2f,%.2f] [%.2f,%.2f]",
+                             keypoints_data[0], keypoints_data[1],
+                             keypoints_data[2], keypoints_data[3],
+                             keypoints_data[4], keypoints_data[5],
+                             keypoints_data[6], keypoints_data[7],
+                             keypoints_data[8], keypoints_data[9]);
+    
+    int kp_offset = num_keypoints * 2;
+    LOG(INFO) << StringPrintf("    Img2: [%.2f,%.2f] [%.2f,%.2f] [%.2f,%.2f] [%.2f,%.2f] [%.2f,%.2f]",
+                             keypoints_data[kp_offset+0], keypoints_data[kp_offset+1],
+                             keypoints_data[kp_offset+2], keypoints_data[kp_offset+3],
+                             keypoints_data[kp_offset+4], keypoints_data[kp_offset+5],
+                             keypoints_data[kp_offset+6], keypoints_data[kp_offset+7],
+                             keypoints_data[kp_offset+8], keypoints_data[kp_offset+9]);
+    
+    // Calculate scaling factors to map from model size to original size
+    const float scale_x1 = static_cast<float>(orig_width1) / width;
+    const float scale_y1 = static_cast<float>(orig_height1) / height;
+    const float scale_x2 = static_cast<float>(orig_width2) / width;
+    const float scale_y2 = static_cast<float>(orig_height2) / height;
+    
+    LOG(INFO) << StringPrintf("  Scaling factors: img1(%.3f, %.3f), img2(%.3f, %.3f)",
+                             scale_x1, scale_y1, scale_x2, scale_y2);
+    
+    // Extract keypoints for image 1 and scale to original coordinates
+    keypoints1->resize(num_keypoints);
+    for (int i = 0; i < num_keypoints; ++i) {
+      (*keypoints1)[i].x = keypoints_data[i * 2 + 0] * scale_x1;
+      (*keypoints1)[i].y = keypoints_data[i * 2 + 1] * scale_y1;
+    }
+    
+    // Extract keypoints for image 2 and scale to original coordinates
+    keypoints2->resize(num_keypoints);
+    for (int i = 0; i < num_keypoints; ++i) {
+      (*keypoints2)[i].x = keypoints_data[kp_offset + i * 2 + 0] * scale_x2;
+      (*keypoints2)[i].y = keypoints_data[kp_offset + i * 2 + 1] * scale_y2;
+    }
+    
+    LOG(INFO) << "  Scaled keypoint ranges:";
+    LOG(INFO) << StringPrintf("    Img1: x[%.1f - %.1f], y[%.1f - %.1f]",
+                             (*keypoints1)[0].x, (*keypoints1)[num_keypoints-1].x,
+                             (*keypoints1)[0].y, (*keypoints1)[num_keypoints-1].y);
+    LOG(INFO) << StringPrintf("    Img2: x[%.1f - %.1f], y[%.1f - %.1f]",
+                             (*keypoints2)[0].x, (*keypoints2)[num_keypoints-1].x,
+                             (*keypoints2)[0].y, (*keypoints2)[num_keypoints-1].y);
+    
+    // Extract matches
+    int64_t* matches_data = output_tensors[1].GetTensorMutableData<int64_t>();
+    auto matches_shape = output_tensors[1].GetTensorTypeAndShapeInfo().GetShape();
+    
+    const int num_matches = matches_shape[0];
+    matches->resize(num_matches);
+    
+    // DEBUG: Log first few matches
+    LOG(INFO) << "  Raw matches from ONNX (first 3):";
+    for (int i = 0; i < std::min(3, num_matches); ++i) {
+      LOG(INFO) << StringPrintf("    Match %d: idx1=%lld, idx2=%lld, batch=%lld",
+                               i,
+                               matches_data[i * 3 + 0],
+                               matches_data[i * 3 + 1],
+                               matches_data[i * 3 + 2]);
+    }
+    
+    for (int i = 0; i < num_matches; ++i) {
+      (*matches)[i].point2D_idx1 = static_cast<point2D_t>(matches_data[i * 3 + 0]);
+      (*matches)[i].point2D_idx2 = static_cast<point2D_t>(matches_data[i * 3 + 1]);
+    }
+    
+    // DEBUG: Show actual matched coordinates (after scaling)
+    LOG(INFO) << "  Matched keypoint coordinates in ORIGINAL image space (first 3):";
+    for (int i = 0; i < std::min(3, num_matches); ++i) {
+      auto idx1 = (*matches)[i].point2D_idx1;
+      auto idx2 = (*matches)[i].point2D_idx2;
+      LOG(INFO) << StringPrintf("    Match %d: [%.1f,%.1f] <-> [%.1f,%.1f]",
+                               i,
+                               (*keypoints1)[idx1].x, (*keypoints1)[idx1].y,
+                               (*keypoints2)[idx2].x, (*keypoints2)[idx2].y);
+    }
+    
+    LOG(INFO) << StringPrintf(
+        "SuperPointLightGlue: Processed [%dx%d->%dx%d] images, extracted %d keypoints, found %d matches",
+        orig_width1, orig_height1, width, height, num_keypoints, num_matches);
+    
+    return num_matches > 0;
+    
+  } catch (const Ort::Exception& e) {
+    LOG(ERROR) << "ONNX Runtime error: " << e.what();
+    return false;
+  }
+}
+
+}  // namespace colmap
+
+#endif  // COLMAP_ONNX_ENABLED

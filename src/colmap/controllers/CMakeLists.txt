@@ -50,6 +50,7 @@ COLMAP_ADD_LIBRARY(
         colmap_util
         Eigen3::Eigen
         Boost::program_options
+        $<$<BOOL:${ONNXRUNTIME_FOUND}>:colmap_feature_onnx>
     PRIVATE_LINK_LIBS
         colmap_image
         colmap_math
