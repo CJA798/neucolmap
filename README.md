@@ -4,8 +4,7 @@ NEUCOLMAP
 About
 -----
 
-Modified version of COLMAP. Will support ML-based kepoint detection & matching.
-Last working update: Dark mode.
+Modified version of COLMAP that supports SuperPoint + LightGlue for auto-reconstruction, and dark mode for UI.
 
 
 
