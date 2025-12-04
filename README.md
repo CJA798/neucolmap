@@ -10,11 +10,13 @@
 ### Example
 Samples from the dataset (5/23 images):
 
-<img src="assets/buddha_004.png" width="150" />
-<img src="assets/buddha_008.png" width="150" />
-<img src="assets/buddha_012.png" width="150" />
-<img src="assets/buddha_016.png" width="150" />
-<img src="assets/buddha_020.png" width="150" />
+<div style="display: flex; flex-wrap: wrap;">
+  <img src="assets/buddha_004.png" width="150" style="margin-right: 10px;" />
+  <img src="assets/buddha_008.png" width="150" style="margin-right: 10px;" />
+  <img src="assets/buddha_012.png" width="150" style="margin-right: 10px;" />
+  <img src="assets/buddha_016.png" width="150" style="margin-right: 10px;" />
+  <img src="assets/buddha_020.png" width="150" style="margin-right: 10px;" />
+</div>
 
 Automatic reconstruction using SuperPoint + LightGlue (1024 keypoints per image):
 
