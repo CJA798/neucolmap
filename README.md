@@ -9,12 +9,9 @@
 
 ### Example
 
-Check out a demo of an automatic reconstruction using SuperPoint + LightGlue:
+Automatic reconstruction using SuperPoint + LightGlue:
 
-<video width="1026" height="627" autoplay loop>
-  <source src="assets/output_example.webm" type="video/webm">
-  Your browser does not support the video tag.
-</video>
+![Demo GIF](assets/output_example.gif)
 
 
 
