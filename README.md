@@ -5,10 +5,10 @@
 **NEUCOLMAP** is a modified version of **COLMAP** that integrates machine learning-based keypoint detection and matching. Current features include:
 
 - **SuperPoint** + **LightGlue** for keypoint detection and matching at **1024 keypoints** per image using an ONNX model.
-- Fixed **Dark Mode**.
+- **Dark Mode**.
 
 ### Example
-Samples from the dataset (5/23 images):
+Samples from the dataset (5/24 images):
 
 <div style="display: flex; flex-wrap: wrap;">
   <img src="assets/buddha_004.png" width="150" style="margin-right: 10px;" />
@@ -17,6 +17,7 @@ Samples from the dataset (5/23 images):
   <img src="assets/buddha_016.png" width="150" style="margin-right: 10px;" />
   <img src="assets/buddha_020.png" width="150" style="margin-right: 10px;" />
 </div>
+
 
 Automatic reconstruction using SuperPoint + LightGlue (1024 keypoints per image):
 
