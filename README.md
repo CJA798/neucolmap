@@ -8,8 +8,15 @@
 - Fixed **Dark Mode**.
 
 ### Example
+Samples from the dataset (5/23 images):
 
-Automatic reconstruction using SuperPoint + LightGlue:
+<img src="assets/buddha_004.png" width="150" />
+<img src="assets/buddha_008.png" width="150" />
+<img src="assets/buddha_012.png" width="150" />
+<img src="assets/buddha_016.png" width="150" />
+<img src="assets/buddha_020.png" width="150" />
+
+Automatic reconstruction using SuperPoint + LightGlue (1024 keypoints per image):
 
 ![Demo GIF](assets/output_example.gif)
 
