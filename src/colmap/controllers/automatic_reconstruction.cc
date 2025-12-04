@@ -166,17 +166,16 @@ void AutomaticReconstructionController::Stop() {
   Thread::Stop();
 }
 
-
 #ifdef COLMAP_ONNX_ENABLED
 void AutomaticReconstructionController::RunMLFeatureExtractionAndMatching() {
   LOG(INFO) << "Starting ML-based feature extraction and matching";
   
-  // Initialize SuperPoint extractor
-  SuperPointExtractor::Options ml_options;
+  // Initialize SuperPoint + LightGlue
+  SuperPointLightGlue::Options ml_options;
   ml_options.use_gpu = options_.use_gpu;
   ml_options.num_threads = options_.num_threads;
   
-  SuperPointExtractor extractor(ml_options);
+  SuperPointLightGlue extractor(ml_options);
   
   // Open database
   auto database = Database::Open(*option_manager_.database_path);
@@ -204,8 +203,6 @@ void AutomaticReconstructionController::RunMLFeatureExtractionAndMatching() {
   // Load images and register in database
   std::vector<image_t> image_ids;
   std::vector<Bitmap> bitmaps;
-  std::vector<FeatureKeypoints> all_keypoints;
-  std::vector<FeatureDescriptors> all_descriptors;
   
   camera_t shared_camera_id = kInvalidCameraId;
   
@@ -213,7 +210,7 @@ void AutomaticReconstructionController::RunMLFeatureExtractionAndMatching() {
     const std::string& path = valid_image_paths[i];
     const std::string name = GetPathBaseName(path);
     
-    LOG(INFO) << StringPrintf("Processing image [%d/%d]: %s", 
+    LOG(INFO) << StringPrintf("Loading image [%d/%d]: %s", 
                               i + 1, valid_image_paths.size(), name.c_str());
     
     Bitmap bitmap;
@@ -258,68 +255,92 @@ void AutomaticReconstructionController::RunMLFeatureExtractionAndMatching() {
     Image image;
     image.SetName(name);
     image.SetCameraId(camera_id);
+    
     image_t image_id = database->WriteImage(image);
-    
-    // Extract features with SuperPoint
-    FeatureKeypoints keypoints;
-    FeatureDescriptors descriptors;
-    
-    if (!extractor.Extract(bitmap, &keypoints, &descriptors)) {
-      LOG(WARNING) << "Failed to extract features";
-      continue;
-    }
-    
-    // Write to database
-    database->WriteKeypoints(image_id, keypoints);
-    database->WriteDescriptors(image_id, descriptors);
-    
-    LOG(INFO) << StringPrintf("  Extracted %d keypoints", keypoints.size());
-    
-    // Store for matching
     image_ids.push_back(image_id);
-    all_keypoints.push_back(keypoints);
-    all_descriptors.push_back(descriptors);
+    bitmaps.push_back(std::move(bitmap));
   }
   
   const size_t num_images = image_ids.size();
   LOG(INFO) << "Registered " << num_images << " images in database";
   
-  // Match all pairs
+  // Match all pairs with geometric verification
   LOG(INFO) << "Matching image pairs with geometric verification...";
   size_t num_total_matches = 0;
   size_t num_verified_pairs = 0;
+  
+  // Track which images have keypoints written
+  std::vector<bool> keypoints_written(num_images, false);
   
   for (size_t i = 0; i < num_images; ++i) {
     for (size_t j = i + 1; j < num_images; ++j) {
       LOG(INFO) << StringPrintf("Matching images [%d-%d]", i, j);
       
-      // Match descriptors
+      FeatureKeypoints kp1, kp2;
       FeatureMatches matches;
-      DescriptorMatcher::MatchDescriptors(all_descriptors[i], all_descriptors[j], 
-                                         &matches, 0.8);
+      
+      // Use LightGlue pipeline to extract and match
+      if (!extractor.ExtractAndMatch(bitmaps[i], bitmaps[j], 
+                                     &kp1, &kp2, &matches)) {
+        LOG(WARNING) << "Failed to extract/match features";
+        continue;
+      }
       
       if (matches.empty()) {
         LOG(WARNING) << "No matches found";
         continue;
       }
       
-      LOG(INFO) << StringPrintf("  Found %d descriptor matches", matches.size());
+      LOG(INFO) << StringPrintf("  Found %d matches", matches.size());
       
-      // Write raw matches
+      // Write keypoints if not already written
+      if (!keypoints_written[i]) {
+        FeatureDescriptors desc1 = FeatureDescriptors::Zero(kp1.size(), 128);
+        database->WriteKeypoints(image_ids[i], kp1);
+        database->WriteDescriptors(image_ids[i], desc1);
+        keypoints_written[i] = true;
+      }
+      
+      if (!keypoints_written[j]) {
+        FeatureDescriptors desc2 = FeatureDescriptors::Zero(kp2.size(), 128);
+        database->WriteKeypoints(image_ids[j], kp2);
+        database->WriteDescriptors(image_ids[j], desc2);
+        keypoints_written[j] = true;
+      }
+      
+      // Write matches
       database->WriteMatches(image_ids[i], image_ids[j], matches);
-      
+
       // Convert keypoints to Eigen::Vector2d for geometric verification
       std::vector<Eigen::Vector2d> points1, points2;
-      points1.reserve(all_keypoints[i].size());
-      points2.reserve(all_keypoints[j].size());
+      points1.reserve(kp1.size());
+      points2.reserve(kp2.size());
       
-      for (const auto& kp : all_keypoints[i]) {
+      for (const auto& kp : kp1) {
         points1.emplace_back(kp.x, kp.y);
       }
-      for (const auto& kp : all_keypoints[j]) {
+      for (const auto& kp : kp2) {
         points2.emplace_back(kp.x, kp.y);
       }
       
+      // DEBUG: Print first few matched keypoints
+      LOG(INFO) << "  DEBUG: First 5 matches:";
+      for (size_t k = 0; k < std::min(size_t(5), matches.size()); ++k) {
+        LOG(INFO) << StringPrintf("    Match %d: img1[%d]=(%.1f,%.1f) <-> img2[%d]=(%.1f,%.1f)",
+                                 k,
+                                 matches[k].point2D_idx1,
+                                 kp1[matches[k].point2D_idx1].x,
+                                 kp1[matches[k].point2D_idx1].y,
+                                 matches[k].point2D_idx2,
+                                 kp2[matches[k].point2D_idx2].x,
+                                 kp2[matches[k].point2D_idx2].y);
+      }
+      LOG(INFO) << StringPrintf("  Image sizes: %dx%d vs %dx%d",
+                               bitmaps[i].Width(), bitmaps[i].Height(),
+                               bitmaps[j].Width(), bitmaps[j].Height());
+
+      LOG(INFO) << StringPrintf("  Keypoint counts: %d vs %d", kp1.size(), kp2.size());
+                               
       // Perform geometric verification
       const Camera& camera1 = database->ReadCamera(
           database->ReadImage(image_ids[i]).CameraId());
@@ -347,9 +368,8 @@ void AutomaticReconstructionController::RunMLFeatureExtractionAndMatching() {
                                  two_view_geometry.inlier_matches.size(),
                                  static_cast<int>(two_view_geometry.config));
       } else {
-        LOG(INFO) << StringPrintf("  ❌ Failed: %d inliers (config: %d)", 
-                                 two_view_geometry.inlier_matches.size(),
-                                 static_cast<int>(two_view_geometry.config));
+        LOG(INFO) << StringPrintf("  ⚠️  Insufficient inliers: %d", 
+                                 two_view_geometry.inlier_matches.size());
       }
     }
   }

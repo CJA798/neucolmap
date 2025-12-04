@@ -15,12 +15,15 @@
 
 namespace colmap {
 
-// SuperPoint feature extractor using ONNX Runtime
-class SuperPointExtractor {
+// SuperPoint + LightGlue feature extractor and matcher using ONNX Runtime
+class SuperPointLightGlue {
  public:
   struct Options {
-    // Path to SuperPoint ONNX model
-    std::string model_path = "/usr/local/share/colmap/models/superpoint_only.onnx";
+    // Path to the ONNX model file
+    std::string model_path = "/usr/local/share/colmap/models/superpoint_lightglue_pipeline.onnx";
+    
+    // Image resize dimensions (model expects consistent size)
+    int image_size = 512;
     
     // Maximum number of keypoints
     int max_num_keypoints = 1024;
@@ -35,13 +38,15 @@ class SuperPointExtractor {
     int gpu_index = 0;
   };
 
-  explicit SuperPointExtractor(const Options& options);
-  ~SuperPointExtractor();
+  explicit SuperPointLightGlue(const Options& options);
+  ~SuperPointLightGlue();
 
-  // Extract features from a single image
-  bool Extract(const Bitmap& bitmap,
-               FeatureKeypoints* keypoints,
-               FeatureDescriptors* descriptors);
+  // Extract features from two images and match them
+  bool ExtractAndMatch(const Bitmap& bitmap1,
+                       const Bitmap& bitmap2,
+                       FeatureKeypoints* keypoints1,
+                       FeatureKeypoints* keypoints2,
+                       FeatureMatches* matches);
 
  private:
   Options options_;
@@ -50,17 +55,7 @@ class SuperPointExtractor {
   std::unique_ptr<Ort::SessionOptions> session_options_;
   
   // Preprocess image for ONNX model
-  std::vector<float> PreprocessImage(const Bitmap& bitmap, int& out_height, int& out_width);
-};
-
-// Simple descriptor matcher using mutual nearest neighbors
-class DescriptorMatcher {
- public:
-  // Match descriptors using mutual nearest neighbors
-  static void MatchDescriptors(const FeatureDescriptors& descriptors1,
-                                const FeatureDescriptors& descriptors2,
-                                FeatureMatches* matches,
-                                float ratio_test_threshold = 0.8);
+  std::vector<float> PreprocessImage(const Bitmap& bitmap);
 };
 
 }  // namespace colmap
