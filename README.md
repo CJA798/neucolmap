@@ -25,6 +25,29 @@ Automatic reconstruction using SuperPoint + LightGlue (1024 keypoints per image)
 
 
 
+# NEUPyCOLMAP
+
+## About
+
+**NEUPyCOLMAP** is a modified version of **PyCOLMAP** that integrates machine learning-based keypoint detection and matching. Current features include:
+
+- **SuperPoint** + **LightGlue**.
+
+
+This Python implementation runs on a Colab notebook that can be found at:
+https://colab.research.google.com/drive/19-9U9XCv5eSnUIv8h9yfXvMZKzi9PjPA?usp=sharing#scrollTo=mk9AkWPpNPWe
+
+### Example
+Comparison of methods:
+
+<div style="display: flex; flex-wrap: wrap;">
+  <img src="assets/pycolmap_output.png" height="250" style="margin-right: 10px;" />
+</div>
+
+
+
+
+
 COLMAP
 ======
 

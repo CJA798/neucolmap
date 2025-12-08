@@ -23,7 +23,7 @@ class SuperPointLightGlue {
     std::string model_path = "/usr/local/share/colmap/models/superpoint_lightglue_pipeline.onnx";
     
     // Image resize dimensions (model expects consistent size)
-    int image_size = 512;
+    int image_size = 1024;
     
     // Maximum number of keypoints
     int max_num_keypoints = 1024;
