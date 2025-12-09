@@ -114,7 +114,7 @@ AutomaticReconstructionWidget::AutomaticReconstructionWidget(
   matching_approach_cb_->addItem("Default (SIFT)");
   matching_approach_cb_->addItem("SuperPoint + LightGlue");
   matching_approach_cb_->addItem("XFeat");
-  matching_approach_cb_->addItem("DISK");
+  matching_approach_cb_->addItem("DISK + LightGlue");
   grid_layout_->addWidget(matching_approach_cb_, grid_layout_->rowCount() - 1, 1);
   connect(matching_approach_cb_,
           QOverload<int>::of(&QComboBox::currentIndexChanged),

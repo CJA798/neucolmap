@@ -13,6 +13,7 @@
 
 #ifdef COLMAP_ONNX_ENABLED
 #include "colmap/feature/onnx/superpoint_lightglue.h"
+#include "colmap/feature/onnx/disk_lightglue.h"
 #endif
 
 #include "colmap/util/string.h"
@@ -81,7 +82,6 @@ AutomaticReconstructionController::AutomaticReconstructionController(
       
     case Options::MatchingApproach::DISK:
       LOG(INFO) << "Using DISK pipeline";
-      LOG(WARNING) << "DISK not yet implemented, falling back to SIFT";
       break;
   }
 
@@ -170,12 +170,23 @@ void AutomaticReconstructionController::Stop() {
 void AutomaticReconstructionController::RunMLFeatureExtractionAndMatching() {
   LOG(INFO) << "Starting ML-based feature extraction and matching";
   
-  // Initialize SuperPoint + LightGlue
-  SuperPointLightGlue::Options ml_options;
-  ml_options.use_gpu = options_.use_gpu;
-  ml_options.num_threads = options_.num_threads;
+  // Initialize the appropriate ML extractor based on user selection
+  std::unique_ptr<SuperPointLightGlue> sp_extractor;
+  std::unique_ptr<DiskLightGlue> disk_extractor;
   
-  SuperPointLightGlue extractor(ml_options);
+  if (options_.matching_approach == Options::MatchingApproach::DISK) {
+    DiskLightGlue::Options ml_options;
+    ml_options.use_gpu = options_.use_gpu;
+    ml_options.num_threads = options_.num_threads;
+    disk_extractor = std::make_unique<DiskLightGlue>(ml_options);
+    LOG(INFO) << "Using DISK + LightGlue extractor";
+  } else {
+    SuperPointLightGlue::Options ml_options;
+    ml_options.use_gpu = options_.use_gpu;
+    ml_options.num_threads = options_.num_threads;
+    sp_extractor = std::make_unique<SuperPointLightGlue>(ml_options);
+    LOG(INFO) << "Using SuperPoint + LightGlue extractor";
+  }
   
   // Open database
   auto database = Database::Open(*option_manager_.database_path);
@@ -279,9 +290,17 @@ void AutomaticReconstructionController::RunMLFeatureExtractionAndMatching() {
       FeatureKeypoints kp1, kp2;
       FeatureMatches matches;
       
-      // Use LightGlue pipeline to extract and match
-      if (!extractor.ExtractAndMatch(bitmaps[i], bitmaps[j], 
-                                     &kp1, &kp2, &matches)) {
+      // Use the appropriate extractor
+      bool success = false;
+      if (disk_extractor) {
+        success = disk_extractor->ExtractAndMatch(bitmaps[i], bitmaps[j], 
+                                                  &kp1, &kp2, &matches);
+      } else {
+        success = sp_extractor->ExtractAndMatch(bitmaps[i], bitmaps[j], 
+                                               &kp1, &kp2, &matches);
+      }
+      
+      if (!success) {
         LOG(WARNING) << "Failed to extract/match features";
         continue;
       }
@@ -310,7 +329,7 @@ void AutomaticReconstructionController::RunMLFeatureExtractionAndMatching() {
       
       // Write matches
       database->WriteMatches(image_ids[i], image_ids[j], matches);
-
+      
       // Convert keypoints to Eigen::Vector2d for geometric verification
       std::vector<Eigen::Vector2d> points1, points2;
       points1.reserve(kp1.size());
@@ -338,9 +357,8 @@ void AutomaticReconstructionController::RunMLFeatureExtractionAndMatching() {
       LOG(INFO) << StringPrintf("  Image sizes: %dx%d vs %dx%d",
                                bitmaps[i].Width(), bitmaps[i].Height(),
                                bitmaps[j].Width(), bitmaps[j].Height());
-
       LOG(INFO) << StringPrintf("  Keypoint counts: %d vs %d", kp1.size(), kp2.size());
-                               
+      
       // Perform geometric verification
       const Camera& camera1 = database->ReadCamera(
           database->ReadImage(image_ids[i]).CameraId());

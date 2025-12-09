@@ -9,6 +9,8 @@ if(ONNXRUNTIME_FOUND)
         SRCS
             superpoint_lightglue.h
             superpoint_lightglue.cc
+            disk_lightglue.h
+            disk_lightglue.cc
         PUBLIC_LINK_LIBS
             colmap_feature
             colmap_util
